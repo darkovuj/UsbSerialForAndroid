@@ -19,6 +19,7 @@ using Android.Runtime;
 using Android.Views;
 using Android.Widget;
 using Android.Util;
+using System.Reflection.Metadata.Ecma335;
 
 namespace Hoho.Android.UsbSerial.Driver
 {
@@ -150,7 +151,7 @@ namespace Hoho.Android.UsbSerial.Driver
 
                     SetConfigSingle(SILABSER_IFC_ENABLE_REQUEST_CODE, UART_ENABLE);
                     SetConfigSingle(SILABSER_SET_MHS_REQUEST_CODE, MCR_ALL | CONTROL_WRITE_DTR | CONTROL_WRITE_RTS);
-                    SetConfigSingle(SILABSER_SET_BAUDDIV_REQUEST_CODE, BAUD_RATE_GEN_FREQ / DEFAULT_BAUD_RATE);
+                    var val = SetConfigSingle(SILABSER_SET_BAUDDIV_REQUEST_CODE, BAUD_RATE_GEN_FREQ / DEFAULT_BAUD_RATE);
                     //            setParameters(DEFAULT_BAUD_RATE, DEFAULT_DATA_BITS, DEFAULT_STOP_BITS, DEFAULT_PARITY);
                     opened = true;
                 }
@@ -190,7 +191,8 @@ namespace Hoho.Android.UsbSerial.Driver
             public override int Read(byte[] dest, int timeoutMillis)
             {
                 int numBytesRead;
-                lock(mReadBufferLock) {
+                lock (mReadBufferLock)
+                {
                     int readAmt = Math.Min(dest.Length, mReadBuffer.Length);
                     numBytesRead = mConnection.BulkTransfer(mReadEndpoint, mReadBuffer, readAmt,
                             timeoutMillis);
@@ -215,7 +217,8 @@ namespace Hoho.Android.UsbSerial.Driver
 
                 while (offset < src.Length)
                 {
-                    lock(mWriteBufferLock) {
+                    lock (mWriteBufferLock)
+                    {
 
                         writeLength = src.Length - offset;
 
@@ -234,7 +237,7 @@ namespace Hoho.Android.UsbSerial.Driver
                 return offset;
             }
 
-            private void SetBaudRate(int baudRate)
+            private int SetBaudRate(int baudRate)
             {
                 byte[] data = new byte[] {
                     (byte) ( baudRate & 0xff),
@@ -244,10 +247,8 @@ namespace Hoho.Android.UsbSerial.Driver
                 };
                 int ret = mConnection.ControlTransfer((UsbAddressing)REQTYPE_HOST_TO_DEVICE, SILABSER_SET_BAUDRATE,
                         0, 0, data, 4, USB_WRITE_TIMEOUT_MILLIS);
-                if (ret < 0)
-                {
-                    throw new IOException("Error setting baud rate.");
-                }
+
+                return ret;
             }
 
 
@@ -294,7 +295,7 @@ namespace Hoho.Android.UsbSerial.Driver
                         configDataBits |= 2;
                         break;
                 }
-                SetConfigSingle(SILABSER_SET_LINE_CTL_REQUEST_CODE, configDataBits);
+                var val = SetConfigSingle(SILABSER_SET_LINE_CTL_REQUEST_CODE, configDataBits);
             }
 
             private int GetStatus()
