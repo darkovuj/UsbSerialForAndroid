@@ -8,15 +8,14 @@
 using System;
 using System.Threading;
 using Android.Hardware.Usb;
-using Android.Util;
 using System.Threading.Tasks;
 using Hoho.Android.UsbSerial.Driver;
+using Serilog;
 
 namespace Hoho.Android.UsbSerial.Extensions
 {
     public class SerialInputOutputManager : IDisposable
     {
-        static readonly string TAG = typeof(SerialInputOutputManager).Name;
         const int READ_WAIT_MILLIS = 200;
         const int DEFAULT_BUFFERSIZE = 4096;
         const int DEFAULT_BAUDRATE = 9600;
@@ -50,12 +49,17 @@ namespace Hoho.Android.UsbSerial.Extensions
 
         public event EventHandler<UnhandledExceptionEventArgs> ErrorReceived;
 
+        public event EventHandler Closed;
+
         public void Open(UsbManager usbManager, int bufferSize = DEFAULT_BUFFERSIZE)
         {
             if (disposed)
                 throw new ObjectDisposedException(GetType().Name);
             if (IsOpen)
                 throw new InvalidOperationException();
+
+            Log.Verbose("Opening serial port");
+
 
             var connection = usbManager.OpenDevice(port.GetDriver().GetDevice());
             if (connection == null)
@@ -68,10 +72,12 @@ namespace Hoho.Android.UsbSerial.Extensions
 
             cancelationTokenSource = new CancellationTokenSource();
             var cancelationToken = cancelationTokenSource.Token;
-            cancelationToken.Register(() => Log.Info(TAG, "Cancellation Requested"));
+            cancelationToken.Register(() => Log.Debug("Cancellation Requested"));
 
-            Task.Run(() => {
-                Log.Info(TAG, "Task Started!");
+            Task.Run(() =>
+            {
+                int threadID = System.Threading.Thread.CurrentThread.ManagedThreadId;
+                Log.Information("<{0}> USB serial communication task Started!", threadID);
                 try
                 {
                     while (true)
@@ -83,19 +89,17 @@ namespace Hoho.Android.UsbSerial.Extensions
                 }
                 catch (OperationCanceledException)
                 {
-                    throw;
+
                 }
                 catch (Exception e)
                 {
-                    Log.Warn(TAG, "Task ending due to exception: " + e.Message, e);
+                    Log.Warning(e, "<{0}> Task ending due to exception: " + e.Message, threadID);
                     ErrorReceived.Raise(this, new UnhandledExceptionEventArgs(e, false));
                 }
                 finally
                 {
-                    port.Close();
-                    buffer = null;
-                    isOpen = false;
-                    Log.Info(TAG, "Task Ended!");
+                   // onClose();
+                    Log.Debug("<{0}> USB serial communication task  Ended!", threadID);
                 }
             }, cancelationToken);
         }
@@ -107,10 +111,24 @@ namespace Hoho.Android.UsbSerial.Extensions
             if (!IsOpen)
                 throw new InvalidOperationException();
 
+            onClose();
             // cancel task
             cancelationTokenSource.Cancel();
         }
 
+        void onClose()
+        {
+            if (!isOpen)
+                return;
+
+            Log.Verbose("Closing serial channel");
+
+            Closed?.Invoke(this, EventArgs.Empty);
+
+            port.Close();
+            buffer = null;
+            isOpen = false;
+        }
         public bool IsOpen => isOpen;
 
         void Step()
@@ -119,7 +137,7 @@ namespace Hoho.Android.UsbSerial.Extensions
             var len = port.Read(buffer, READ_WAIT_MILLIS);
             if (len > 0)
             {
-                Log.Debug(TAG, "Read data len=" + len);
+                Log.Debug("Read data len=" + len);
 
                 var data = new byte[len];
                 Array.Copy(buffer, data, len);
